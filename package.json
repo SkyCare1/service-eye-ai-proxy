@@ -1,0 +1,9 @@
+{
+  "name": "service-eye-ai-proxy",
+  "version": "1.0.0",
+  "description": "Secure AI proxy for Service Eye Manager dashboard",
+  "type": "module",
+  "engines": {
+    "node": ">=18.x"
+  }
+}
