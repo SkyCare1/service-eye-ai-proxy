@@ -24,13 +24,13 @@ export default async function handler(req, res) {
         model: 'gpt-4o-mini',
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
         temperature: 0.3,
-        max_tokens: 1500
+        max_tokens: 2000
       })
     });
 
     if (!openaiResponse.ok) {
       const errText = await openaiResponse.text();
-      return res.status(500).json({ error: 'OpenAI error', details: errText.substring(0, 200) });
+      return res.status(500).json({ error: 'OpenAI error', details: errText.substring(0, 300) });
     }
 
     const data = await openaiResponse.json();
@@ -51,32 +51,42 @@ function buildSystemPrompt(pageData, currentTab) {
   };
   const tabLabel = tabLabels[currentTab] || currentTab || 'Unknown';
 
-  let prompt = `You are a helpful assistant integrated into the Service Eye Manager dashboard.
-You help users understand and analyze their service center data.
+  let prompt = `You are a data analyst assistant integrated into the Service Eye Manager dashboard.
+You help users analyze and understand their service center operations.
 
 IMPORTANT CONTEXT:
 - The user is currently viewing the "${tabLabel}" tab
-- You can ONLY answer questions about the data shown in the current tab
-- If the user asks about a different tab, politely tell them to switch to that tab first
+- Data is loaded directly from GitHub Excel files (always fresh)
+- You can analyze the FULL DATASET, not just visible rows
 - Always respond in the SAME LANGUAGE the user used (Arabic or English)
-- Be concise and direct
-- When showing numbers, format them clearly (use commas for thousands)
-- If you're unsure about something, say so — don't make up numbers
+- Be concise, direct, and data-driven
+- Format numbers clearly (use commas for thousands, percentages where useful)
+- When showing top/bottom lists, prefer markdown tables or clear bullet lists
+- If a metric isn't in the provided data, say so — never invent numbers
+- For analytical questions, provide insights and recommendations when relevant
 `;
 
   if (pageData && pageData.summary) {
-    prompt += `\n\n=== CURRENT TAB DATA SUMMARY ===\nTab: ${tabLabel}\nTotal rows: ${pageData.summary.totalRows || 0}\n`;
+    const s = pageData.summary;
+    prompt += `\n\n=== CURRENT TAB DATA ===\n`;
+    prompt += `Tab: ${tabLabel}\n`;
+    prompt += `Total rows in dataset: ${s.totalRows || 0}\n`;
+    
+    if (s.isFiltered) {
+      prompt += `Currently filtered/visible rows: ${s.filteredRows}\n`;
+      prompt += `Note: User has filters applied. You see the FULL dataset.\n`;
+    }
 
-    if (pageData.summary.kpis) {
-      prompt += `\nKey metrics:\n`;
-      for (const [key, value] of Object.entries(pageData.summary.kpis)) {
-        prompt += `- ${key}: ${value}\n`;
+    if (s.kpis && Object.keys(s.kpis).length) {
+      prompt += `\nKey metrics (from full dataset):\n`;
+      for (const [key, value] of Object.entries(s.kpis)) {
+        prompt += `- ${key}: ${typeof value === 'number' ? value.toLocaleString() : value}\n`;
       }
     }
 
-    if (pageData.summary.breakdowns) {
-      prompt += `\nBreakdowns:\n`;
-      for (const [category, items] of Object.entries(pageData.summary.breakdowns)) {
+    if (s.breakdowns && Object.keys(s.breakdowns).length) {
+      prompt += `\nBreakdowns (top values per category):\n`;
+      for (const [category, items] of Object.entries(s.breakdowns)) {
         prompt += `\n${category}:\n`;
         for (const [name, count] of Object.entries(items)) {
           prompt += `  - ${name}: ${count}\n`;
@@ -84,13 +94,18 @@ IMPORTANT CONTEXT:
       }
     }
 
-    if (pageData.summary.sampleRows && pageData.summary.sampleRows.length) {
-      prompt += `\nSample of recent rows:\n${JSON.stringify(pageData.summary.sampleRows, null, 2)}`;
+    if (s.activeFilters && s.activeFilters.note) {
+      prompt += `\nFilter info: ${s.activeFilters.note}\n`;
     }
 
-    prompt += `\n=== END OF DATA ===\n`;
+    if (s.sampleRows && s.sampleRows.length) {
+      prompt += `\nSample rows (${s.sampleRows.length} of ${s.totalRows}):\n`;
+      prompt += JSON.stringify(s.sampleRows, null, 2).substring(0, 8000);
+    }
+
+    prompt += `\n\n=== END OF DATA ===\n`;
   } else {
-    prompt += `\n\nNote: No data is currently loaded. Ask the user to load data first.`;
+    prompt += `\n\nNote: No data is loaded yet. If the user asks about specific data, suggest they wait a moment for the page to load it from GitHub, or refresh the page.`;
   }
 
   return prompt;
